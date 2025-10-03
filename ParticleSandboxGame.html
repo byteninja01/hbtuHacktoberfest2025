@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle Gravity Sandbox</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            font-size: 14px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        canvas {
+            border-radius: 15px;
+            cursor: crosshair;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            background: #0a0a0a;
+        }
+
+        .info {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .mode-indicator {
+            display: inline-block;
+            padding: 5px 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚛️ Particle Gravity Sandbox</h1>
+        <div class="controls">
+            <button id="particleMode" class="active">Particle Mode</button>
+            <button id="gravityMode">Gravity Well Mode</button>
+            <button id="clearBtn">Clear All</button>
+        </div>
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <div class="info">
+            <div class="mode-indicator" id="modeText">Click to spawn particles</div>
+            <div style="margin-top: 5px; font-size: 12px;">Gravity wells attract particles • Particles collide and merge</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const particleModeBtn = document.getElementById('particleMode');
+        const gravityModeBtn = document.getElementById('gravityMode');
+        const clearBtn = document.getElementById('clearBtn');
+        const modeText = document.getElementById('modeText');
+
+        let mode = 'particle';
+        let particles = [];
+        let gravityWells = [];
+        let mouseDown = false;
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = (Math.random() - 0.5) * 2;
+                this.radius = Math.random() * 3 + 2;
+                this.mass = this.radius * this.radius;
+                this.hue = Math.random() * 360;
+                this.life = 1;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.hue}, 100%, 60%, ${this.life})`;
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 1.5, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.hue}, 100%, 60%, ${this.life * 0.2})`;
+                ctx.fill();
+            }
+
+            update() {
+                gravityWells.forEach(well => {
+                    const dx = well.x - this.x;
+                    const dy = well.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 1) {
+                        const force = (well.strength * this.mass) / (dist * dist);
+                        this.vx += (dx / dist) * force;
+                        this.vy += (dy / dist) * force;
+                    }
+                });
+
+                this.vx *= 0.99;
+                this.vy *= 0.99;
+                
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+                    this.vx *= -0.8;
+                    this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                }
+                if (this.y - this.radius < 0 || this.y + this.radius > canvas.height) {
+                    this.vy *= -0.8;
+                    this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+                }
+            }
+        }
+
+        class GravityWell {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.strength = 0.5;
+                this.radius = 30;
+                this.pulse = 0;
+            }
+
+            draw() {
+                this.pulse += 0.05;
+                const pulseSize = Math.sin(this.pulse) * 5;
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius + pulseSize, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(100, 200, 255, 0.1)';
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(100, 200, 255, 0.6)';
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.2, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.fill();
+            }
+        }
+
+        particleModeBtn.addEventListener('click', () => {
+            mode = 'particle';
+            particleModeBtn.classList.add('active');
+            gravityModeBtn.classList.remove('active');
+            modeText.textContent = 'Click to spawn particles';
+        });
+
+        gravityModeBtn.addEventListener('click', () => {
+            mode = 'gravity';
+            gravityModeBtn.classList.add('active');
+            particleModeBtn.classList.remove('active');
+            modeText.textContent = 'Click to place gravity wells';
+        });
+
+        clearBtn.addEventListener('click', () => {
+            particles = [];
+            gravityWells = [];
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            mouseDown = true;
+            handleClick(e);
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (mouseDown && mode === 'particle') {
+                handleClick(e);
+            }
+        });
+
+        function handleClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            if (mode === 'particle') {
+                for (let i = 0; i < 3; i++) {
+                    particles.push(new Particle(
+                        x + (Math.random() - 0.5) * 20,
+                        y + (Math.random() - 0.5) * 20
+                    ));
+                }
+            } else if (mode === 'gravity') {
+                gravityWells.push(new GravityWell(x, y));
+            }
+        }
+
+        function checkCollisions() {
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const p1 = particles[i];
+                    const p2 = particles[j];
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < p1.radius + p2.radius) {
+                        const angle = Math.atan2(dy, dx);
+                        const sin = Math.sin(angle);
+                        const cos = Math.cos(angle);
+
+                        const vx1 = p1.vx * cos + p1.vy * sin;
+                        const vy1 = p1.vy * cos - p1.vx * sin;
+                        const vx2 = p2.vx * cos + p2.vy * sin;
+                        const vy2 = p2.vy * cos - p2.vx * sin;
+
+                        const vx1Final = ((p1.mass - p2.mass) * vx1 + 2 * p2.mass * vx2) / (p1.mass + p2.mass);
+                        const vx2Final = ((p2.mass - p1.mass) * vx2 + 2 * p1.mass * vx1) / (p1.mass + p2.mass);
+
+                        p1.vx = vx1Final * cos - vy1 * sin;
+                        p1.vy = vy1 * cos + vx1Final * sin;
+                        p2.vx = vx2Final * cos - vy2 * sin;
+                        p2.vy = vy2 * cos + vx2Final * sin;
+
+                        const overlap = p1.radius + p2.radius - dist;
+                        p1.x -= overlap * cos * 0.5;
+                        p1.y -= overlap * sin * 0.5;
+                        p2.x += overlap * cos * 0.5;
+                        p2.y += overlap * sin * 0.5;
+                    }
+                }
+            }
+        }
+
+        function animate() {
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            gravityWells.forEach(well => well.draw());
+
+            particles.forEach((particle, index) => {
+                particle.update();
+                particle.draw();
+
+                if (particle.life <= 0) {
+                    particles.splice(index, 1);
+                }
+            });
+
+            checkCollisions();
+
+            if (particles.length > 1000) {
+                particles.splice(0, particles.length - 1000);
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
